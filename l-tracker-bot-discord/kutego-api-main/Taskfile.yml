@@ -1,0 +1,63 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Build Go binary
+    cmds:
+    - GOFLAGS=-mod=mod go build -o bin/kutego-api internal/main.go
+  run: 
+    desc: Run http server directly (without build)
+    cmds:
+    - GOFLAGS=-mod=mod go run internal/main.go
+
+  swagger:validate:
+    desc: Validate Swagger spec
+    cmds:
+    - cmd: |
+        swagger validate ./pkg/swagger/swagger.yml
+  
+  swagger:serve:
+    desc: Serve swagger UI
+    cmds:
+    - cmd: |
+        swagger serve -F swagger ./pkg/swagger/swagger.yml
+
+  swagger:gen:
+    desc: Generate Go code
+    cmds:
+    - cmd: |
+        GOFLAGS=-mod=mod go generate github.com/gaelleacas/kutego-api/internal github.com/gaelleacas/kutego-api/pkg/swagger
+
+  swagger:doc:
+      desc: Doc for swagger
+      cmds:
+      - docker run -i yousan/swagger-yaml-to-html < pkg/swagger/swagger.yml > doc/index.html
+
+  swagger.gen:
+      desc: generate Go code
+      cmds:
+      - GOFLAGS=-mod=mod go generate pkg/swagger/
+
+  
+  # docker:swagger:validate:
+  #   desc: Validate Swagger spec
+  #   cmds:
+  #   - cmd: |
+  #       docker run -it --rm \
+  #       --user $(id -u):$(id -g) \
+  #       -e GOPATH=$(go env GOPATH):/go \
+  #       -v $HOME:$HOME \
+  #       -w $(pwd) quay.io/goswagger/swagger validate ./pkg/swagger/swagger.yml
+  ## Doesn't work for now because I don't find how to serve on MacOS host from docker desktop
+  ## `host.docker.internal` fail :'(
+  # docker:swagger:serve:
+  #   desc: Run swagger
+  #   cmds:
+  #   - cmd: |
+  #       docker run --rm \
+  #       --user $(id -u):$(id -g) \
+  #       -e GOPATH=$(go env GOPATH):/go \
+  #       -v $HOME:$HOME \
+  #       -w $(pwd) quay.io/goswagger/swagger serve ./pkg/swagger/swagger.yml --no-open
+
+
