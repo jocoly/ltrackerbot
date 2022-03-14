@@ -1,6 +1,32 @@
-//build
-//export BOT_TOKEN=<TOKEN GOES HERE!!!>
-//go run main.go -t $BOT_TOKEN
+// Will soon migrate from mysql to sqlite
+
+// Future goals:
+// !fetch @user Ls
+// random flavor text
+// bot intro message
+
+//TO RUN BOT:
+
+//	1. Delete old database if you want new data
+//		-open terminal
+//		-set root path variable: export PATH=${PATH}:/usr/local/mysql/bin
+
+//		-default username is root
+//		-default password is rootpass
+//		-***change constants below if yours are different***
+
+//		-mysql -u <username> -p
+//		-enter password
+//		-DROP DATABASE countDB;
+//
+//	2. Run bot from project folder
+//		-open new terminal (don't close the mysql one)
+//		-cd into project directory
+//		-export token: export BOT_TOKEN=<BOT TOKEN GOES HERE>
+//		-start bot: go run main.go -t $BOT_TOKEN
+
+//TO CLOSE BOT:
+//	CTRL-C in the terminal running the bot (in the project folder)
 package main
 
 import (
@@ -11,6 +37,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,20 +48,33 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-// Variables used for command line parameters
+// variables used for command line parameters
 var Token string
 var DB *sql.DB
 
 const (
-	username       = "root"
-	password       = "rootpass"
-	hostname       = "localhost"
-	dbname         = "countDB"
+	//for mysql database
+	username = "root"
+	password = "rootpass"
+	hostname = "localhost"
+	dbname   = "countDB"
+
+	//bot commands
+	commandL       = "!L"
+	commandW       = "!W"
+	commandFetchLs = "!FetchLs"
+	commandFetchWs = "!FetchWs"
+
+	commandCommands = "!Commands"
+
+	//bot messages
 	LMessage       = " has taken another L."
 	WMessage       = " has secured another W."
 	firstLMessage  = " has taken their first L."
 	firstWMessage  = " has secured their first W."
 	botsDontTakeLs = "Foolish mortal. I don't take L's; I give them."
+	botGetsAW      = "Thanks for the W! :) I work hard to keep track."
+	commandsList   = "Hi! I'm the L Tracker!\n\n-Reply !L or !l to a user to give them an L\n-Reply !W or !w to a user to give them a W"
 )
 
 type Ltracker struct {
@@ -55,7 +95,6 @@ func dbConnection() (*sql.DB, error) {
 		log.Printf("Error %s when opening database\n", err)
 		return nil, err
 	}
-	//defer db.Close()
 
 	//create database
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
@@ -78,14 +117,13 @@ func dbConnection() (*sql.DB, error) {
 		log.Printf("Error %s when opening database", err)
 		return nil, err
 	}
-	//defer db.Close()
 
-	//db config options
+	//database config options
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(20)
 	db.SetConnMaxLifetime(time.Hour * 24)
 
-	//verify db connection
+	//verify database connection
 	ctx, cancelfunc = context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	err = db.PingContext(ctx)
@@ -236,15 +274,20 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
+	//for Ls:
 
-	if m.Content == "!L" && m.Type == discordgo.MessageTypeReply {
+	var messageContent = m.Content
+	var messageType = m.Type
+
+	if strings.EqualFold(messageContent, commandL) && messageType == discordgo.MessageTypeReply {
+		//connect to countDB
 		db, err := dbConnection()
 		if err != nil {
 			log.Printf("Error %s when getting database connection", err)
 			return
 		}
 		defer db.Close()
-
+		//plug user info into variables
 		referencedAuthorUsername := m.ReferencedMessage.Author.Username
 		referencedAuthorID := m.ReferencedMessage.Author.ID
 		var WsForFirstL int = selectWs(db, referencedAuthorID)
@@ -254,21 +297,20 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			Ls:       1,
 			Ws:       WsForFirstL,
 		}
-		//insert userid, username and first L into Ltracker if they are not already in it
+		//insert userid, username and first L into LTrackerTable if they are not already in it
 		err1 := insertRow(db, firstL)
 		if err1 != nil {
 			log.Printf("Insert Ls failed with error %s", err)
 			return
 		}
-
-		var Ls int = selectLs(db, referencedAuthorID)
 		//SELECT Ls FROM countDB WHERE userID=referencedAuthorID
+		var Ls int = selectLs(db, referencedAuthorID)
 		if referencedAuthorUsername != "" {
 			//bots dont take Ls
 			if referencedAuthorID == s.State.User.ID {
 				s.ChannelMessageSend(m.ChannelID, botsDontTakeLs)
 			} else {
-				if Ls < 1 {
+				if Ls < 1 { //if Ls is initialized but has no data, this is the first L
 					Ls = 1
 				}
 				count := strconv.Itoa(Ls)
@@ -288,19 +330,19 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 	}
-
-	if m.Content == "!W" && m.Type == discordgo.MessageTypeReply {
+	//for Ws
+	if strings.EqualFold(messageContent, commandW) && messageType == discordgo.MessageTypeReply {
+		//connect to countDB
 		db, err := dbConnection()
 		if err != nil {
 			log.Printf("Error %s when getting database connection", err)
 			return
 		}
 		defer db.Close()
-
+		//plug user info into variables
 		referencedAuthorUsername := m.ReferencedMessage.Author.Username
 		referencedAuthorID := m.ReferencedMessage.Author.ID
 		var LsForFirstW int = selectLs(db, referencedAuthorID)
-
 		firstW := Ltracker{
 			userID:   referencedAuthorID,
 			username: referencedAuthorUsername,
@@ -313,15 +355,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			log.Printf("Insert Ws failed with error %s", err)
 			return
 		}
-
-		var Ws int = selectWs(db, referencedAuthorID)
 		//SELECT Ws FROM countDB WHERE userID=referencedAuthorID
+		var Ws int = selectWs(db, referencedAuthorID)
 		if referencedAuthorUsername != "" {
 			//bots do take Ws
 			if referencedAuthorID == s.State.User.ID {
-				s.ChannelMessageSend(m.ChannelID, "Thanks for the W! :) I work hard to keep track.")
+				s.ChannelMessageSend(m.ChannelID, botGetsAW)
 			} else {
-				if Ws < 1 {
+				if Ws < 1 { //if Ws is initialized but has no data, this is the first W
 					Ws = 1
 				}
 				count := strconv.Itoa(Ws)
@@ -341,23 +382,27 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 	}
+
+	if strings.EqualFold(messageContent, commandCommands) {
+		s.ChannelMessageSend(m.ChannelID, commandsList)
+	}
 }
 
 func main() {
-	// Create a new Discord session using the provided bot token.
+	//Create a new Discord session using the provided bot token
 	dg, err := discordgo.New("Bot " + Token)
 	if err != nil {
 		fmt.Println("Error creating Discord session, ", err)
 		return
 	}
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
-	// Open a websocket connection to Discord and begin listening.
+	//Open a websocket connection to Discord and begin listening
 	err = dg.Open()
 	if err != nil {
 		fmt.Println("Error connecting to Discord session", err)
 		return
 	}
-
+	//Connect to countDB database
 	db, err := dbConnection()
 	if err != nil {
 		log.Printf("Error %s when getting database connection", err)
@@ -365,19 +410,19 @@ func main() {
 	}
 	defer db.Close()
 	log.Printf("Successfully connected to database")
+	//Create LTrackerTable
 	err = createLTrackerTable(db)
 	if err != nil {
 		log.Printf("Create LTrackerTable failed with error %s", err)
 		return
 	}
-
-	// Register the messageCreate func as a callback for MessageCreate events.
+	//Register the messageCreate func as a callback for MessageCreate events
 	dg.AddHandler(messageCreate)
 	// Wait here until CTRL-C or other term signal is received.
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
-	// Cleanly close down the Discord session.
+	//Close the Discord session.
 	dg.Close()
 }
