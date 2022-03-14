@@ -163,6 +163,9 @@ func selectLs(db *sql.DB, userID string) int {
 
 func updateLs(db *sql.DB, userID string) int {
 	var Ls int = selectLs(db, userID)
+	if Ls == -1 {
+		Ls = 1
+	}
 	Ls += 1
 	query := "UPDATE lTracker SET Ls = ? WHERE userID = ?"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
@@ -173,13 +176,57 @@ func updateLs(db *sql.DB, userID string) int {
 		return -1
 	}
 	defer stmt.Close()
-	LString := strconv.Itoa(Ls)
+	var LsNormalized int = Ls - 1
+	LString := strconv.Itoa(LsNormalized)
 	log.Println("Updating userID:" + userID + "'s Ls to " + LString)
 	row := stmt.QueryRowContext(ctx, Ls, userID)
 	if err := row.Scan(&Ls); err != nil {
 		return -1
 	}
 	return Ls
+}
+
+func selectWs(db *sql.DB, userID string) int {
+	query := "SELECT Ws FROM lTracker WHERE userID = ?"
+	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelfunc()
+	stmt, err := db.PrepareContext(ctx, query)
+	if err != nil {
+		log.Printf("Error %s when preparing selectWs statement", err)
+		return -1
+	}
+	defer stmt.Close()
+	var Ws int
+	row := stmt.QueryRowContext(ctx, userID)
+	if err := row.Scan(&Ws); err != nil {
+		return -1
+	}
+	return Ws
+}
+
+func updateWs(db *sql.DB, userID string) int {
+	var Ws int = selectWs(db, userID)
+	if Ws == -1 {
+		Ws = 1
+	}
+	Ws += 1
+	query := "UPDATE lTracker SET Ws = ? WHERE userID = ?"
+	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelfunc()
+	stmt, err := db.PrepareContext(ctx, query)
+	if err != nil {
+		log.Printf("Error %s when preparing updateWs statement", err)
+		return -1
+	}
+	defer stmt.Close()
+	var WsNormalized int = Ws - 1
+	WString := strconv.Itoa(WsNormalized)
+	log.Println("Updating userID:" + userID + "'s Ws to " + WString)
+	row := stmt.QueryRowContext(ctx, Ws, userID)
+	if err := row.Scan(&Ws); err != nil {
+		return -1
+	}
+	return Ws
 }
 
 // This function will be called (due to AddHandler above) every time a new
@@ -191,15 +238,6 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if m.Content == "!L" && m.Type == discordgo.MessageTypeReply {
-		referencedAuthorUsername := m.ReferencedMessage.Author.Username
-		referencedAuthorID := m.ReferencedMessage.Author.ID
-		firstL := Ltracker{
-			userID:   referencedAuthorID,
-			username: referencedAuthorUsername,
-			Ls:       1,
-			Ws:       0,
-		}
-
 		db, err := dbConnection()
 		if err != nil {
 			log.Printf("Error %s when getting database connection", err)
@@ -207,6 +245,15 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		defer db.Close()
 
+		referencedAuthorUsername := m.ReferencedMessage.Author.Username
+		referencedAuthorID := m.ReferencedMessage.Author.ID
+		var WsForFirstL int = selectWs(db, referencedAuthorID)
+		firstL := Ltracker{
+			userID:   referencedAuthorID,
+			username: referencedAuthorUsername,
+			Ls:       1,
+			Ws:       WsForFirstL,
+		}
 		//insert userid, username and first L into Ltracker if they are not already in it
 		err1 := insertRow(db, firstL)
 		if err1 != nil {
@@ -214,13 +261,16 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 
-		//get SELECT Ls FROM countDB WHERE userID=referencedAuthorID
 		var Ls int = selectLs(db, referencedAuthorID)
+		//SELECT Ls FROM countDB WHERE userID=referencedAuthorID
 		if referencedAuthorUsername != "" {
 			//bots dont take Ls
 			if referencedAuthorID == s.State.User.ID {
 				s.ChannelMessageSend(m.ChannelID, botsDontTakeLs)
 			} else {
+				if Ls < 1 {
+					Ls = 1
+				}
 				count := strconv.Itoa(Ls)
 				//first L:
 				if count == "1" {
@@ -232,6 +282,59 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 					updateLs(db, referencedAuthorID)
 					LString := strconv.Itoa(Ls)
 					s.ChannelMessageSend(m.ChannelID, referencedAuthorUsername+LMessage+" That's "+LString+" Ls now.")
+				}
+			}
+		} else {
+			return
+		}
+	}
+
+	if m.Content == "!W" && m.Type == discordgo.MessageTypeReply {
+		db, err := dbConnection()
+		if err != nil {
+			log.Printf("Error %s when getting database connection", err)
+			return
+		}
+		defer db.Close()
+
+		referencedAuthorUsername := m.ReferencedMessage.Author.Username
+		referencedAuthorID := m.ReferencedMessage.Author.ID
+		var LsForFirstW int = selectLs(db, referencedAuthorID)
+
+		firstW := Ltracker{
+			userID:   referencedAuthorID,
+			username: referencedAuthorUsername,
+			Ls:       LsForFirstW,
+			Ws:       1,
+		}
+		//insert userid, username and first W into Ltracker if they are not already in it
+		err1 := insertRow(db, firstW)
+		if err1 != nil {
+			log.Printf("Insert Ws failed with error %s", err)
+			return
+		}
+
+		var Ws int = selectWs(db, referencedAuthorID)
+		//SELECT Ws FROM countDB WHERE userID=referencedAuthorID
+		if referencedAuthorUsername != "" {
+			//bots do take Ws
+			if referencedAuthorID == s.State.User.ID {
+				s.ChannelMessageSend(m.ChannelID, "Thanks for the W! :) I work hard to keep track.")
+			} else {
+				if Ws < 1 {
+					Ws = 1
+				}
+				count := strconv.Itoa(Ws)
+				//first W:
+				if count == "1" {
+					updateWs(db, referencedAuthorID)
+					s.ChannelMessageSend(m.ChannelID, referencedAuthorUsername+firstWMessage)
+				} else
+				//subsequent Ws:
+				{
+					updateWs(db, referencedAuthorID)
+					WString := strconv.Itoa(Ws)
+					s.ChannelMessageSend(m.ChannelID, referencedAuthorUsername+WMessage+" That's "+WString+" Ws now.")
 				}
 			}
 		} else {
