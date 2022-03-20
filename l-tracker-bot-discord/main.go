@@ -74,7 +74,7 @@ const (
 	firstWMessage  = " has secured their first W."
 	botsDontTakeLs = "Foolish mortal. I don't take L's; I give them."
 	botGetsAW      = "Thanks for the W! :) I work hard to keep track."
-	commandsList   = "Hi! I'm the L Tracker!\n\n-Reply !L or !l to a user to give them an L\n-Reply !W or !w to a user to give them a W"
+	commandsList   = "Hi! I'm the L Tracker!\n\nReply !L to a user to give them an L\nReply !W to a user to give them a W\nSay !Commands to see a list of commands"
 )
 
 type Ltracker struct {
