@@ -45,7 +45,7 @@ import (
 
 	"database/sql"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // variables used for command line parameters
@@ -53,11 +53,8 @@ var Token string
 var DB *sql.DB
 
 const (
-	//for mysql database
-	username = "root"
-	password = "rootpass"
-	hostname = "localhost"
-	dbname   = "countDB"
+	//for sqlite
+	dbname = "countDB"
 
 	//bot commands
 	commandL       = "!L"
@@ -90,53 +87,12 @@ func init() {
 }
 
 func dbConnection() (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn(""))
+	db, err := sql.Open("sqlite3", dbname)
 	if err != nil {
 		log.Printf("Error %s when opening database\n", err)
 		return nil, err
 	}
-
-	//create database
-	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelfunc()
-	res, err := db.ExecContext(ctx, "CREATE DATABASE IF NOT EXISTS "+dbname)
-	if err != nil {
-		log.Printf("Error %s when creating database\n", err)
-	}
-	no, err := res.RowsAffected()
-	if err != nil {
-		log.Printf("Error %s when fetching rows affected during database update", err)
-		return nil, err
-	}
-	log.Printf("%d rows affected by database update", no)
-
-	//close unnamed database and connect to the one we just created
-	db.Close()
-	db, err = sql.Open("mysql", dsn(dbname))
-	if err != nil {
-		log.Printf("Error %s when opening database", err)
-		return nil, err
-	}
-
-	//database config options
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(20)
-	db.SetConnMaxLifetime(time.Hour * 24)
-
-	//verify database connection
-	ctx, cancelfunc = context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelfunc()
-	err = db.PingContext(ctx)
-	if err != nil {
-		log.Printf("Errors %s pinging database", err)
-		return nil, err
-	}
-	log.Printf("Connected to %s successfully\n", dbname)
 	return db, nil
-}
-
-func dsn(dbName string) string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", username, password, hostname, dbName)
 }
 
 func createLTrackerTable(db *sql.DB) error {
@@ -158,7 +114,7 @@ func createLTrackerTable(db *sql.DB) error {
 }
 
 func insertRow(db *sql.DB, t Ltracker) error {
-	query := "INSERT IGNORE INTO Ltracker(userID, username, Ls, Ws) VALUES (?, ?, ?, ?)"
+	query := "INSERT OR IGNORE INTO Ltracker(userID, username, Ls, Ws) VALUES (?, ?, ?, ?)"
 	ctx, cancelfunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelfunc()
 	stmt, err := db.PrepareContext(ctx, query)
